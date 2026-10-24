@@ -6,6 +6,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+import subprocess
+import sys
+
 # Page setup
 st.set_page_config(
     page_title="Sales Analytics Dashboard",
@@ -20,19 +23,46 @@ st.title("📊 Sales Data Analysis & Insights")
 st.caption("Explore sales performance by date, category, and region.")
 
 # Load data from SQLite
+
 @st.cache_data
 def load_data():
-    with sqlite3.connect(DB_FILE) as connection:
-        data = pd.read_sql_query("SELECT * FROM sales", connection)
+    # Create the database automatically if it does not exist
+    if not DB_FILE.exists():
+        pipeline = BASE_DIR / "process_sales.py"
 
-    data["OrderDate"] = pd.to_datetime(data["OrderDate"])
+        if not pipeline.exists():
+            raise FileNotFoundError(
+                "process_sales.py was not found."
+            )
+
+        subprocess.run(
+            [sys.executable, str(pipeline)],
+            cwd=BASE_DIR,
+            check=True
+        )
+
+    # Read sales data from SQLite
+    with sqlite3.connect(DB_FILE) as connection:
+        data = pd.read_sql_query(
+            "SELECT * FROM sales",
+            connection
+        )
+
+    data["OrderDate"] = pd.to_datetime(
+        data["OrderDate"],
+        errors="coerce"
+    )
+
+    data = data.dropna(subset=["OrderDate"])
+
     return data
 
+# Load sales data before using it in the dashboard
 try:
     df = load_data()
 except Exception as error:
     st.error(f"Could not load sales data: {error}")
-    st.info("Run `python process_sales.py` first.")
+    st.info("Check data/sales.csv and process_sales.py.")
     st.stop()
 
 if df.empty:
